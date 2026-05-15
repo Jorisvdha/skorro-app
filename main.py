@@ -39,7 +39,7 @@ C = {
     for k, v in THEME.items()
 }
 Window.clearcolor = C["bg_dark"]
-Window.set_icon("logo.png")
+Window.set_icon("icon.png")
 SAVE_FILE        = "skorro_save.json"
 LEADERBOARD_FILE = "skorro_leaderboard.json"
 YANIV_HALVE_AT   = {50, 100, 150, 200}
