@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Locked Buildozer Android APK
 
 on:
   push:
@@ -9,53 +9,111 @@ jobs:
   build:
     runs-on: ubuntu-22.04
 
+    env:
+      ANDROID_HOME: ${{ github.workspace }}/android-sdk
+      ANDROIDSDK: ${{ github.workspace }}/android-sdk
+      ANDROIDNDK: r25c
+      ANDROIDAPI: 33
+      ANDROIDMINAPI: 24
+
     steps:
-    - name: Checkout source
+    - name: Checkout repository
       uses: actions/checkout@v4
 
+    # ----------------------------
+    # Python (PINNED)
+    # ----------------------------
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: "3.10"
 
+    # ----------------------------
+    # Java 17 (REQUIRED for Gradle/AGP)
+    # ----------------------------
     - name: Set up Java 17
       uses: actions/setup-java@v4
       with:
         distribution: temurin
         java-version: "17"
 
-    - name: Install system dependencies
+    # ----------------------------
+    # System dependencies
+    # ----------------------------
+    - name: Install system packages
       run: |
         sudo apt update
         sudo apt install -y \
-          git zip unzip openjdk-17-jdk \
+          git zip unzip curl \
+          build-essential \
           autoconf libtool pkg-config \
-          zlib1g-dev libncurses5-dev \
-          libncursesw5-dev libtinfo5 \
-          cmake libffi-dev libssl-dev
+          cmake zlib1g-dev libffi-dev libssl-dev \
+          libncurses5-dev libncursesw5-dev
 
+    # ----------------------------
+    # Install Buildozer tools (PINNED)
+    # ----------------------------
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
         pip install cython==0.29.36
-        pip install buildozer
-        pip install python-for-android
+        pip install buildozer==1.5.0
+        pip install python-for-android==2023.9.16
 
-    - name: Install Android SDK components + accept licenses
+    # ----------------------------
+    # Install Android SDK properly (FIXED)
+    # ----------------------------
+    - name: Install Android SDK command line tools
       run: |
+        mkdir -p $ANDROID_HOME/cmdline-tools
+        cd $ANDROID_HOME
+
+        curl -o cmdline-tools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+        unzip -q cmdline-tools.zip
+
+        mkdir -p cmdline-tools/latest
+        mv cmdline-tools/* cmdline-tools/latest/ || true
+
+        export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH
+
         yes | sdkmanager --licenses || true
-        sdkmanager "platform-tools" \
-                   "platforms;android-33" \
-                   "build-tools;33.0.2"
 
-    - name: Force Buildozer stable build-tools
+        sdkmanager \
+          "platform-tools" \
+          "platforms;android-33" \
+          "build-tools;33.0.2"
+
+    # ----------------------------
+    # Lock buildozer config
+    # ----------------------------
+    - name: Lock Buildozer settings
       run: |
-        echo "android.build_tools_version=33.0.2" >> buildozer.spec
+        echo "android.api = 33" >> buildozer.spec
+        echo "android.minapi = 24" >> buildozer.spec
+        echo "android.build_tools_version = 33.0.2" >> buildozer.spec
 
+    # ----------------------------
+    # Cache (stability + speed)
+    # ----------------------------
+    - name: Cache build folders
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.buildozer
+          ~/.gradle
+          ~/.android
+        key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+
+    # ----------------------------
+    # Build APK (non-interactive)
+    # ----------------------------
     - name: Build APK
       run: |
-        buildozer android debug
+        yes | buildozer android debug
 
+    # ----------------------------
+    # Upload APK artifact
+    # ----------------------------
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
