@@ -53,14 +53,14 @@ requirements = python3,kivy
 # requirements.source.kivy = ../../kivy
 
 # (str) Presplash of the application
-presplash.filename = %(source.dir)s/splash.png
+presplash.filename = splash.png
 
 # (str) Icon of the application
 icon.filename = icon.png
 
 # (list) Supported orientations
 # Valid options are: landscape, portrait, portrait-reverse, landscape-reverse, or all
-orientation = portrait524
+orientation = portrait
 
 # (list) List of services to declare
 # This is currently only relevant to Android services.

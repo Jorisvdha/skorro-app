@@ -30,6 +30,8 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.textinput import TextInput
 from kivy.uix.widget import Widget
 from kivy.utils import get_color_from_hex, platform
+from kivy.clock import Clock
+from kivy.uix.floatlayout import FloatLayout
 
 from config import APP_ICON, APP_INFO_TEXT, GAMES, RULES, THEME
 
