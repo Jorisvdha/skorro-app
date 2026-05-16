@@ -11,27 +11,33 @@ To run in PyCharm:
   3.  python main.py
 """
 
-import json
+# ── Splash hack: must come BEFORE any kivy import ────────────────────────────
+# Suppresses Kivy's built-in purple splash so our custom one appears instead.
 import os
+os.environ["KIVY_NO_ENV_CONFIG"] = "1"
+
+import json
 import random
 
 from kivy.app import App
+from kivy.clock import Clock                          # <-- added for splash
 from kivy.core.text import LabelBase
 from kivy.core.window import Window
 from kivy.graphics import Color, RoundedRectangle, Rectangle
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
+from kivy.uix.floatlayout import FloatLayout          # <-- added for splash
 from kivy.uix.image import Image
 from kivy.uix.label import Label
 from kivy.uix.popup import Popup
-from kivy.uix.screenmanager import ScreenManager, Screen, SlideTransition
+from kivy.uix.screenmanager import (ScreenManager, Screen,
+                                    SlideTransition, NoTransition)  # <-- NoTransition added
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.textinput import TextInput
 from kivy.uix.widget import Widget
 from kivy.utils import get_color_from_hex, platform
-from kivy.clock import Clock
-from kivy.uix.floatlayout import FloatLayout
+
 
 from config import APP_ICON, APP_INFO_TEXT, GAMES, RULES, THEME
 
@@ -41,7 +47,13 @@ C = {
     for k, v in THEME.items()
 }
 Window.clearcolor = C["bg_dark"]
-Window.set_icon("icon.png")
+
+# Wrap set_icon so the app doesn't crash when logo.png is absent
+try:
+    Window.set_icon("logo.png")
+except Exception:
+    pass
+
 SAVE_FILE        = "skorro_save.json"
 LEADERBOARD_FILE = "skorro_leaderboard.json"
 YANIV_HALVE_AT   = {50, 100, 150, 200}
@@ -473,8 +485,9 @@ def _handle_back(window, key, *args):
     app = App.get_running_app()
     current = app.sm.current
 
-    if current == "home":
-        return False   # let Android close the app normally from home
+    # Never intercept on the splash — it dismisses itself automatically
+    if current in ("home", "splash"):
+        return False
 
     if current == "current_score":
         # Reuse the existing go-home popup logic
@@ -493,6 +506,54 @@ def _handle_back(window, key, *args):
 # =============================================================================
 #  Screens
 # =============================================================================
+
+# ── Splash ────────────────────────────────────────────────────────────────────
+# This is the FIRST screen shown — Kivy renders it before anything else loads.
+# Background: #1C1C2E (same as bg_dark).
+# Image: splash.png, square, fills the full screen width.
+# After 0.1 s, _finish_build() adds all real screens and navigates away.
+
+class SplashScreen(Screen):
+    def __init__(self, **kw):
+        super().__init__(name="splash", **kw)
+
+        layout = FloatLayout()
+
+        # Solid background
+        with layout.canvas.before:
+            Color(*get_color_from_hex("#1C1C2E"))
+            self._bg = Rectangle(pos=layout.pos, size=layout.size)
+        layout.bind(
+            pos =lambda w, v: setattr(self._bg, "pos",  v),
+            size=lambda w, v: setattr(self._bg, "size", v),
+        )
+
+        if os.path.exists("splash.png"):
+            img = Image(
+                source="splash.png",
+                size_hint=(1, None),   # full width; height set by binding below
+                allow_stretch=True,
+                keep_ratio=True,
+                mipmap=True,
+                pos_hint={"center_x": 0.5, "center_y": 0.5},
+            )
+            # Keep the image square: height always equals its rendered width
+            img.bind(width=lambda w, width: setattr(w, "height", width))
+            layout.add_widget(img)
+        else:
+            # Fallback text when splash.png is not found
+            layout.add_widget(Label(
+                text="Skorro",
+                font_size=dp(40),
+                bold=True,
+                color=get_color_from_hex("#EEEEF4"),
+                pos_hint={"center_x": 0.5, "center_y": 0.5},
+                size_hint=(None, None),
+                size=(dp(200), dp(60)),
+            ))
+
+        self.add_widget(layout)
+
 
 # ── Home ──────────────────────────────────────────────────────────────────────
 
@@ -901,7 +962,7 @@ class CurrentScoreScreen(Screen):
         root = BoxLayout(orientation="vertical")
         root.add_widget(header_bar(
             f"{game['name']}  —  Round {app.round_num}",
-            right_widget=SmallBtn("Main Menu", cb=self._go_home,height=dp(40)),
+            right_widget=SmallBtn("Main Menu", cb=self._go_home, height=dp(40)),
         ))
 
         inner = make_inner(spacing=4)
@@ -1233,7 +1294,19 @@ class SkorroApp(App):
         # Bind Android back button / Escape key
         Window.bind(on_keyboard=_handle_back)
 
-        self.sm = ScreenManager()
+        # ── Splash-first loading ──────────────────────────────────────────────
+        # 1. Create ScreenManager with NoTransition so splash renders instantly
+        #    with zero animation overhead.
+        # 2. Add ONLY the SplashScreen — it is shown in the very first frame.
+        # 3. Clock fires _finish_build() after 0.1 s, building all other
+        #    screens while the splash is visible, then navigates to home.
+        self.sm = ScreenManager(transition=NoTransition())
+        self.sm.add_widget(SplashScreen())
+        Clock.schedule_once(self._finish_build, 0.1)
+        return self.sm
+
+    def _finish_build(self, dt):
+        """Build all app screens and navigate away from the splash."""
         for s in [
             HomeScreen(),
             InfoScreen(),
@@ -1248,7 +1321,14 @@ class SkorroApp(App):
         ]:
             self.sm.add_widget(s)
 
-        return self.sm
+        # Restore normal slide transitions for in-app navigation
+        self.sm.transition = SlideTransition()
+
+        # Go directly to current_score if a saved game exists, otherwise home
+        if self.load_game():
+            self.sm.current = "current_score"
+        else:
+            self.sm.current = "home"
 
     # ── Game state ────────────────────────────────────────────────────────────
 
